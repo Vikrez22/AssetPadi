@@ -19,7 +19,7 @@ interface Particle {
 }
 
 export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
-  const { state, error, startCall, endCall } = useVoice();
+  const { state, error, startCall, endCall, isUserTalking, isAgentTalking } = useVoice();
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const [duration, setDuration] = useState(0);
@@ -95,9 +95,12 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
       }, 1000);
 
       waveInterval = setInterval(() => {
-        // Simulate audio waveform heights
+        // Jitters active waveform if speaking, else stays relatively flat
+        const isSpeakingOrListening = isUserTalking || isAgentTalking;
         const newWaveform = Array(32).fill(0).map(() => 
-          Math.random() * 85 + 15
+          isSpeakingOrListening 
+            ? Math.random() * 80 + 20 
+            : Math.random() * 8 + 4
         );
         setWaveformData(newWaveform);
       }, 100);
@@ -109,7 +112,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
       clearInterval(timerInterval);
       clearInterval(waveInterval);
     };
-  }, [state]);
+  }, [state, isUserTalking, isAgentTalking]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -120,10 +123,28 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
   const statusLabel = {
     idle: 'Starting...',
     connecting: 'Connecting...',
-    connected: 'Speaking...',
+    connected: isUserTalking ? 'Listening...' : (isAgentTalking ? 'Speaking...' : 'Listening...'),
     ended: 'Call ended',
     error: 'Connection failed',
   }[state];
+
+  const getStatusColorClass = () => {
+    if (state === 'connecting') return "text-brand-yellow";
+    if (state === 'error') return "text-brand-error";
+    if (state === 'connected') {
+      return isUserTalking ? "text-brand-teal" : (isAgentTalking ? "text-green-500" : "text-brand-teal");
+    }
+    return "text-gray-400";
+  };
+
+  const getWaveformColorClass = () => {
+    if (state === 'connected') {
+      return isUserTalking ? "bg-brand-teal" : (isAgentTalking ? "bg-green-500" : "bg-brand-teal");
+    }
+    if (state === 'connecting') return "bg-brand-yellow";
+    if (state === 'error') return "bg-brand-error";
+    return "bg-gray-800";
+  };
 
   return (
     <div className="fixed inset-0 bg-[#090D16] flex flex-col items-center justify-between py-12 px-6 z-50 selection:bg-brand-purple/30 selection:text-white">
@@ -192,7 +213,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
           <div
             className={cn(
               "relative w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 border-2",
-              state === 'connected' ? "border-brand-teal bg-brand-teal/10 shadow-lg shadow-brand-teal/20" :
+              state === 'connected' ? (isUserTalking ? "border-brand-teal bg-brand-teal/10 shadow-lg shadow-brand-teal/20" : "border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20") :
               state === 'connecting' ? "border-brand-yellow bg-brand-yellow/10 shadow-lg shadow-brand-yellow/20" :
               state === 'error' ? "border-brand-error bg-brand-error/10 shadow-lg shadow-brand-error/20" :
               "border-white/10 bg-white/5"
@@ -209,14 +230,25 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
                   <Loader2 className="w-12 h-12 text-brand-yellow animate-spin" />
                 </motion.div>
               ) : state === 'connected' ? (
-                <motion.div
-                  key="connected"
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                >
-                  <Volume2 className="w-12 h-12 text-brand-teal" />
-                </motion.div>
+                isUserTalking ? (
+                  <motion.div
+                    key="listening"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                  >
+                    <Mic className="w-12 h-12 text-brand-teal" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="speaking"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                  >
+                    <Volume2 className="w-12 h-12 text-green-500" />
+                  </motion.div>
+                )
               ) : (
                 <motion.div
                   key="idle"
@@ -235,7 +267,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
             {state === 'connected' && (
               <>
                 <motion.div
-                  className="absolute inset-0 rounded-full border-2 border-brand-teal/30"
+                  className={cn("absolute inset-0 rounded-full border-2", isUserTalking ? "border-brand-teal/30" : "border-green-500/30")}
                   initial={{ scale: 1, opacity: 0.6 }}
                   animate={{ scale: 1.5, opacity: 0 }}
                   transition={{
@@ -245,7 +277,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
                   }}
                 />
                 <motion.div
-                  className="absolute inset-0 rounded-full border-2 border-brand-teal/20"
+                  className={cn("absolute inset-0 rounded-full border-2", isUserTalking ? "border-brand-teal/20" : "border-green-500/20")}
                   initial={{ scale: 1, opacity: 0.4 }}
                   animate={{ scale: 2, opacity: 0 }}
                   transition={{
@@ -267,10 +299,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
               key={index}
               className={cn(
                 "w-1 rounded-full transition-colors duration-300",
-                state === 'connected' ? "bg-brand-teal" :
-                state === 'connecting' ? "bg-brand-yellow" :
-                state === 'error' ? "bg-brand-error" :
-                "bg-gray-800"
+                getWaveformColorClass()
               )}
               animate={{
                 height: `${Math.max(4, height * 0.6)}px`,
@@ -287,12 +316,7 @@ export default function VoiceCallOverlay({ onClose }: VoiceCallOverlayProps) {
         {/* Status and timer */}
         <div className="text-center space-y-2">
           <motion.p
-            className={cn("text-xl font-bold tracking-tight transition-colors", 
-              state === 'connected' ? "text-brand-teal" :
-              state === 'connecting' ? "text-brand-yellow" :
-              state === 'error' ? "text-brand-error" :
-              "text-gray-400"
-            )}
+            className={cn("text-xl font-bold tracking-tight transition-colors", getStatusColorClass())}
             animate={{ opacity: [1, 0.7, 1] }}
             transition={{
               duration: 2,

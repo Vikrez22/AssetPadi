@@ -10,6 +10,14 @@ export function useVoice() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  const [isUserTalking, setIsUserTalking] = useState(false);
+  const [isAgentTalking, setIsAgentTalking] = useState(false);
+
+  const userAudioCtxRef = useRef<AudioContext | null>(null);
+  const agentAudioCtxRef = useRef<AudioContext | null>(null);
+  const userFrameIdRef = useRef<number | null>(null);
+  const agentFrameIdRef = useRef<number | null>(null);
 
   const isAvailable = true; // AethexAI is now integrated
 
@@ -19,6 +27,26 @@ export function useVoice() {
     pcRef.current?.close();
     pcRef.current = null;
     if (audioRef.current) audioRef.current.srcObject = null;
+
+    // Close AudioContexts to release resources
+    if (userAudioCtxRef.current) {
+      userAudioCtxRef.current.close().catch(e => console.error('Error closing userAudioCtx:', e));
+      userAudioCtxRef.current = null;
+    }
+    if (agentAudioCtxRef.current) {
+      agentAudioCtxRef.current.close().catch(e => console.error('Error closing agentAudioCtx:', e));
+      agentAudioCtxRef.current = null;
+    }
+    if (userFrameIdRef.current) {
+      cancelAnimationFrame(userFrameIdRef.current);
+      userFrameIdRef.current = null;
+    }
+    if (agentFrameIdRef.current) {
+      cancelAnimationFrame(agentFrameIdRef.current);
+      agentFrameIdRef.current = null;
+    }
+    setIsUserTalking(false);
+    setIsAgentTalking(false);
   }, []);
 
   const startCall = useCallback(async (audioElement: HTMLAudioElement) => {
@@ -45,10 +73,52 @@ export function useVoice() {
         }
       };
 
-      // Play incoming agent audio
+      // Play incoming agent audio and analyze agent volume
       pc.ontrack = (ev) => {
         if (audioRef.current) {
           audioRef.current.srcObject = ev.streams[0];
+        }
+
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass && ev.streams[0]) {
+            const audioCtx = new AudioContextClass();
+            agentAudioCtxRef.current = audioCtx;
+            const source = audioCtx.createMediaStreamSource(ev.streams[0]);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            
+            const checkVolume = () => {
+              if (!pcRef.current || pcRef.current.connectionState !== 'connected') {
+                return;
+              }
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+              }
+              const average = sum / bufferLength;
+              setIsAgentTalking(average > 8); // threshold
+              agentFrameIdRef.current = requestAnimationFrame(checkVolume);
+            };
+            
+            if (pc.connectionState === 'connected') {
+              checkVolume();
+            } else {
+              pc.addEventListener('connectionstatechange', function listener() {
+                if (pc.connectionState === 'connected') {
+                  checkVolume();
+                  pc.removeEventListener('connectionstatechange', listener);
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Failed to setup agent volume analyser:', err);
         }
       };
 
@@ -56,6 +126,44 @@ export function useVoice() {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = micStream;
       micStream.getTracks().forEach(t => pc.addTrack(t, micStream));
+
+      // Analyze user mic volume
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          userAudioCtxRef.current = audioCtx;
+          const source = audioCtx.createMediaStreamSource(micStream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+          
+          const checkVolume = () => {
+            if (!pcRef.current || pcRef.current.connectionState !== 'connected') {
+              return;
+            }
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+              sum += dataArray[i];
+            }
+            const average = sum / bufferLength;
+            setIsUserTalking(average > 8); // threshold
+            userFrameIdRef.current = requestAnimationFrame(checkVolume);
+          };
+
+          pc.addEventListener('connectionstatechange', () => {
+            if (pc.connectionState === 'connected') {
+              checkVolume();
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to setup mic volume analyser:', err);
+      }
 
       // 3. Create and send SDP offer
       const offer = await pc.createOffer();
@@ -113,5 +221,7 @@ export function useVoice() {
     endCall,
     isConnected: state === 'connected',
     isConnecting: state === 'connecting',
+    isUserTalking,
+    isAgentTalking,
   };
 }
