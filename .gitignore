@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.local
+BUILD_GUIDE.md
+AssetPadi_Team_Brief.docx
+ARCHITECTURE.md
+AETHEXAI_INTEGRATION.md
+UI_SPEC.md
+PRD (1).md
+package-lock.json
+.agent
+design-system
