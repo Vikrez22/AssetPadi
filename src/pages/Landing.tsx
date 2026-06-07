@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, ClipboardList, TrendingUp } from 'lucide-react';
+import { Shield, ClipboardList, TrendingUp, Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Button from '../components/ui/Button';
 import Logo from '../components/ui/Logo';
+import VoiceCallOverlay from '../components/chat/VoiceCallOverlay';
 import { cn } from '../lib/utils';
 
 interface ElegantShapeProps {
@@ -75,6 +77,7 @@ function ElegantShape({
 
 export default function Landing() {
   const navigate = useNavigate();
+  const [voiceActive, setVoiceActive] = useState(false);
 
   const fadeUpVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -183,13 +186,13 @@ export default function Landing() {
             AssetPadi helps informal business owners in Nigeria formalise their business, register their assets with the National Collateral Registry (NCR), and unlock credit, step-by-step, in simple language or Pidgin.
           </motion.p>
 
-          {/* Animated CTA Button */}
+          {/* Animated CTA Buttons */}
           <motion.div
             custom={3}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="flex justify-center w-full"
+            className="flex flex-col sm:flex-row justify-center items-center gap-4 w-full"
           >
             <Button
               onClick={() => navigate('/onboard')}
@@ -197,6 +200,15 @@ export default function Landing() {
               className="w-full sm:w-auto px-10 py-4 text-base sm:text-lg shadow-lg shadow-brand-teal/15 rounded-2xl hover:scale-105 active:scale-95 transition-all"
             >
               Get Started
+            </Button>
+            
+            <Button
+              onClick={() => setVoiceActive(true)}
+              variant="secondary"
+              className="w-full sm:w-auto px-10 py-4 text-base sm:text-lg flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all shadow-sm cursor-pointer"
+            >
+              <Mic className="w-5 h-5 text-brand-teal animate-pulse" />
+              <span>Talk to AssetPadi</span>
             </Button>
           </motion.div>
         </div>
@@ -274,6 +286,14 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Voice Call Overlay */}
+      {voiceActive && (
+        <VoiceCallOverlay
+          userName="Guest"
+          onClose={() => setVoiceActive(false)}
+        />
+      )}
     </div>
   );
 }
